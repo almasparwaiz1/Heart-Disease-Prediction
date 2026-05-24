@@ -58,7 +58,7 @@ class CustomFeatureEngineer(BaseEstimator, TransformerMixin):
 # ========================================== #
 # BASE DIRECTORY CONFIG                      #
 # ========================================== #
-BASE_DIR = "F:\\AI and Data Science Projects\\Heart Disease Prediction app\\Streamlit_Frontend"
+BASE_DIR = "Streamlit_Frontend"
 MODEL_PATH = os.path.join(BASE_DIR, "heart_risk_prediction_full_pipeline.joblib")
 
 # ========================================== #
