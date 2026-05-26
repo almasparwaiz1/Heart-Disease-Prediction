@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # --- Base Directory & File Paths --- #
-BASE_DIR = r"F:\AI and Data Science Projects\Heart Disease Prediction app\Streamlit_Frontend"
+BASE_DIR = r"Streamlit_Frontend"
 SCALER_PATH = os.path.join(BASE_DIR, 'scaler.pkl')
 MODEL_PATH = os.path.join(BASE_DIR, 'stacking_classifier_model.pkl')
 FEATURE_COLUMNS_PATH = os.path.join(BASE_DIR, 'feature_columns.pkl')
