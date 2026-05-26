@@ -4,245 +4,247 @@ import numpy as np
 import joblib
 import os
 
-# ========================================== #
-# 🛠️ MONKEY PATCH FOR SCIKIT-LEARN ERROR     #
-# ========================================== #
-import sklearn.compose._column_transformer
-if not hasattr(sklearn.compose._column_transformer, '_RemainderColsList'):
-    class _RemainderColsList(list):
-        pass
-    sklearn.compose._column_transformer._RemainderColsList = _RemainderColsList
-
-# Import BaseEstimator, TransformerMixin for CustomFeatureEngineer
-from sklearn.base import BaseEstimator, TransformerMixin
-
-# ========================================== #
-# Define CustomFeatureEngineer Class         #
-# (MUST be present when loading the pipeline)#
-# ========================================== #
-class CustomFeatureEngineer(BaseEstimator, TransformerMixin):
-    def __init__(self):
-        self.risk_factor_cols = ['High_BP', 'High_Cholesterol', 'Diabetes', 'Smoking', 'Obesity', 'Family_History', 'Chronic_Stress']
-        self.heart_symptoms = [
-            'Chest_Pain', 'Shortness_of_Breath', 'Fatigue', 'Palpitations', 'Dizziness',
-            'Swelling', 'Pain_Arms_Jaw_Back', 'Cold_Sweats_Nausea'
-        ]
-        self.age_bins = [0, 40, 60, 84] # Using 84 as max age from EDA
-        self.age_labels = ['Young', 'Middle_Aged', 'Elderly']
-
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-        X_copy = X.copy()
-
-        # 1. Age Groups
-        X_copy['Age_Group'] = pd.cut(X_copy['Age'], bins=self.age_bins, labels=self.age_labels, right=False, include_lowest=True).astype(object)
-
-        # 2. Risk Score Index
-        existing_risk_factor_cols = [col for col in self.risk_factor_cols if col in X_copy.columns]
-        X_copy['Risk_Score_Index'] = X_copy[existing_risk_factor_cols].sum(axis=1)
-
-        # 3. High_BP_x_High_Cholesterol interaction
-        X_copy['High_BP_x_High_Cholesterol'] = X_copy['High_BP'] * X_copy['High_Cholesterol']
-
-        # 4. Heart Workload Index
-        existing_heart_symptoms = [col for col in self.heart_symptoms if col in X_copy.columns]
-        X_copy['Heart_Workload_Index'] = X_copy[existing_heart_symptoms].sum(axis=1)
-
-        # 5. Age_x_High_Cholesterol interaction
-        X_copy['Age_x_High_Cholesterol'] = X_copy['Age'] * X_copy['High_Cholesterol']
-
-        return X_copy
-
-# ========================================== #
-# BASE DIRECTORY CONFIG                      #
-# ========================================== #
-BASE_DIR = "Streamlit_Frontend"
-MODEL_PATH = os.path.join(BASE_DIR, "heart_risk_prediction_full_pipeline.joblib")
-
-# ========================================== #
-# PAGE CONFIG                                #
-# ========================================== #
+# --- Page Configuration --- #
 st.set_page_config(
-    page_title="Heart Disease Risk AI",
-    layout="wide",
-    page_icon="❤️"
+    page_title="Clinical Heart Disease Risk Assessment",
+    page_icon="🩺",
+    layout="centered",
+    initial_sidebar_state="collapsed", # No sidebar by default
 )
 
-# ========================================== #
-# CUSTOM CSS (CLINICAL 60-30-10 UI THEME)    #
-# ========================================== #
-st.markdown("""
-<style>
-    /* Main Background & Text Accessibility */
-    .stApp {
-        background-color: #FFFFFF !important;
-        color: #1F2937 !important;
-    }
-    
-    /* Primary Branding Headers (60%) */
-    h1 {
-        color: #0F2C59 !important;
-        font-weight: 700 !important;
-        border-bottom: 2px solid #0F2C59;
-        padding-bottom: 10px;
-    }
-    h2, h3 {
-        color: #1E3A8A !important;
-        font-weight: 600 !important;
-    }
-    
-    /* Interactive Secondary Element Buttons (30%) */
-    .stButton>button {
-        background-color: #008080 !important;
-        color: #FFFFFF !important;
-        font-size: 16px !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
-        padding: 12px 28px !important;
-        border: none !important;
-        box-shadow: 0 4px 6px rgba(0, 128, 128, 0.2);
-        transition: all 0.3s ease;
-    }
+# --- Base Directory & File Paths --- #
+BASE_DIR = r"F:\AI and Data Science Projects\Heart Disease Prediction app\Streamlit_Frontend"
+SCALER_PATH = os.path.join(BASE_DIR, 'scaler.pkl')
+MODEL_PATH = os.path.join(BASE_DIR, 'stacking_classifier_model.pkl')
+FEATURE_COLUMNS_PATH = os.path.join(BASE_DIR, 'feature_columns.pkl')
 
-    .stButton>button:hover {
-        background-color: #06B6D4 !important;
-        box-shadow: 0 6px 12px rgba(6, 182, 212, 0.4);
-        transform: translateY(-1px);
-    }
-    
-    /* Accent Elements & High Risk Indicators (10%) */
-    .high-risk-alert {
-        background-color: #FF6B6B !important;
-        color: #FFFFFF !important;
-        padding: 15px;
-        border-radius: 8px;
-        font-weight: bold;
-    }
-    
-    .warning-text {
-        color: #F59E0B !important;
-        font-weight: bold;
-    }
-    
-    /* Clean Cards for Inputs */
-    div[data-testid="stVerticalBlock"] > div {
-        background-color: #FFFFFF;
-    }
-    
-    /* Sidebar Styling */
-    .stSidebar {
-        background-color: #F3F4F6 !important;
-        border-right: 1px solid #E5E7EB;
-    }
-</style>
-""", unsafe_allow_html=True)
+# --- Inject Clinical Theme Custom CSS --- #
+st.markdown(
+    """
+    <style>
+        /* Base Application Layout Colors */
+        :root {
+            --primary: #0A2540;
+            --secondary: #00A699;
+            --accent: #FF5A5F;
+        }
+        
+        /* Main Page Background & Headers */
+        .main .block-container {
+            padding-top: 2rem;
+        }
+        h1 {
+            color: #0A2540 !important;
+            font-weight: 700 !important;
+        }
+        h2, h3 {
+            color: #0A2540 !important;
+            font-weight: 600 !important;
+        }
+        
+        /* Hide Sidebar Elements completely */
+        [data-testid="stSidebar"] {
+            display: none !important;
+        }
+        
+        /* Button Styling (Teal / Aqua Primary Action) */
+        div.stButton > button:first-child {
+            background-color: #00A699 !important;
+            color: white !important;
+            border: none !important;
+            padding: 0.6rem 2rem !important;
+            font-weight: bold !important;
+            border-radius: 6px !important;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+        div.stButton > button:first-child:hover {
+            background-color: #00877d !important;
+            box-shadow: 0px 4px 10px rgba(0, 166, 153, 0.3);
+        }
+        
+        /* Custom Alerts / Card Indicators */
+        .high-risk-alert {
+            background-color: rgba(255, 90, 95, 0.1);
+            border-left: 5px solid #FF5A5F;
+            padding: 1.5rem;
+            border-radius: 4px;
+            color: #333;
+            margin-bottom: 1rem;
+        }
+        .low-risk-alert {
+            background-color: rgba(0, 166, 153, 0.1);
+            border-left: 5px solid #00A699;
+            padding: 1.5rem;
+            border-radius: 4px;
+            color: #333;
+            margin-bottom: 1rem;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-# ========================================== #
-# LOAD MODEL                                 #
-# ========================================== #
-@st.cache_resource
-def load_pipeline():
-    if not os.path.exists(MODEL_PATH):
-        st.error(f"❌ Model not found at: {MODEL_PATH}")
-        return None
+# --- Load Model and Preprocessor --- #
+@st.cache_resource(show_spinner="Loading predictive clinical models...")
+def load_resources():
     try:
-        return joblib.load(MODEL_PATH)
+        scaler = joblib.load(SCALER_PATH)
+        model = joblib.load(MODEL_PATH)
+        feature_columns = joblib.load(FEATURE_COLUMNS_PATH)
+        return scaler, model, feature_columns
+    except FileNotFoundError as e:
+        st.error(f"Critical System Error: Resource asset not found. Verification failed for: {e.filename}")
+        st.stop()
     except Exception as e:
-        st.error(f"❌ Error loading model: {e}")
-        return None
+        st.error(f"Unexpected System Interruption during load initialization: {e}")
+        st.stop()
 
-pipeline = load_pipeline()
+scaler, model, feature_columns = load_resources()
 
-if pipeline is None:
-    st.stop()
+# --- Feature Engineering and Preprocessing Function ---
+# REMOVED @st.cache_data decorator here to allow dynamic feature engineering updates
+def preprocess_input(input_df, feature_columns_list):
+    processed_df = input_df.copy()
 
-# ========================================== #
-# APP TITLE                                  #
-# ========================================== #
-st.title("❤️ Heart Disease Risk Prediction AI")
-st.markdown("<p style='color: #4B5563; font-size: 1.1rem;'>AI-powered medical risk analysis built for clinical decision support and early detection.</p>", unsafe_allow_html=True)
+    # 1. Age Groups 
+    bins = [0, 40, 60, 84] 
+    labels = ['Young', 'Middle_Aged', 'Elderly']
+    processed_df['Age_Group'] = pd.cut(processed_df['Age'], bins=bins, labels=labels, right=False, include_lowest=True)
+
+    # 2. Risk Score Index
+    risk_factor_cols = ['High_BP', 'High_Cholesterol', 'Diabetes', 'Smoking', 'Obesity', 'Family_History', 'Chronic_Stress']
+    processed_df['Risk_Score_Index'] = processed_df[risk_factor_cols].sum(axis=1)
+
+    # 3. High_BP_x_High_Cholesterol Interaction
+    processed_df['High_BP_x_High_Cholesterol'] = processed_df['High_BP'] * processed_df['High_Cholesterol']
+
+    # 4. Heart Workload Index
+    heart_symptoms = [
+        'Chest_Pain', 'Shortness_of_Breath', 'Fatigue', 'Palpitations', 'Dizziness',
+        'Swelling', 'Pain_Arms_Jaw_Back', 'Cold_Sweats_Nausea'
+    ]
+    processed_df['Heart_Workload_Index'] = processed_df[heart_symptoms].sum(axis=1)
+
+    # 5. Age_x_High_Cholesterol Interaction
+    processed_df['Age_x_High_Cholesterol'] = processed_df['Age'] * processed_df['High_Cholesterol']
+
+    # One-hot encode 'Age_Group'
+    processed_df = pd.get_dummies(processed_df, columns=['Age_Group'], drop_first=True)
+
+    # Align columns with training structure
+    final_df = pd.DataFrame(0, index=processed_df.index, columns=feature_columns_list)
+
+    for col in final_df.columns:
+        if col in processed_df.columns:
+            final_df[col] = processed_df[col].astype(int) if processed_df[col].dtype == bool else processed_df[col]
+
+    return final_df
+
+# --- Prediction Function ---
+def predict_risk(data_scaled):
+    prediction = model.predict(data_scaled)
+    prediction_proba = model.predict_proba(data_scaled)[:, 1]
+    return prediction[0], prediction_proba[0]
+
+# --- Main Dashboard Frame --- #
+st.title("🩺 Clinical Heart Disease Risk Analytics")
+st.markdown(
+    "Welcome to the Diagnostic Support Dashboard. This system utilizes a trained "
+    "Stacking Classifier ensemble architecture to evaluate risk metrics based on structured "
+    "patient physiological indicators. Please input required metrics accurately below."
+)
 st.markdown("---")
 
+# --- Clinical Forms Input Section --- #
+st.subheader("Patient Clinical Profile Setup")
 
-symptom_features = [
-    'Chest_Pain', 'Shortness_of_Breath', 'Fatigue', 'Palpitations',
-    'Dizziness', 'Swelling', 'Pain_Arms_Jaw_Back', 'Cold_Sweats_Nausea'
-]
-
-risk_factor_features = [
-    'High_BP', 'High_Cholesterol', 'Diabetes', 'Smoking',
-    'Obesity', 'Sedentary_Lifestyle', 'Family_History', 'Chronic_Stress'
-]
-
+col1, col2 = st.columns(2)
 user_input = {}
 
-# ========================================== #
-# LAYOUT                                     #
-# ========================================== #
-col1, col2 = st.columns(2, gap="large")
-
 with col1:
-    st.subheader("👤 Patient Demographics")
-    user_input["Age"] = st.slider("Age", 20, 90, 45)
-    user_input["Gender"] = st.selectbox(
-        "Gender",
-        options=[("Female", 0), ("Male", 1)],
-        format_func=lambda x: x[0]
-    )[1]
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("⚕️ Clinical Symptoms")
-    for f in symptom_features:
-        user_input[f] = st.selectbox(
-            f.replace("_", " "),
-            options=[("No", 0.0), ("Yes", 1.0)],
-            format_func=lambda x: x[0]
-        )[1]
+    st.markdown("### Demographic & Acute Symptoms")
+    user_input['Age'] = st.slider("Patient Age (Years)", min_value=18, max_value=100, value=50, step=1,
+                                  help="Current verified physiological age.")
+    user_input['Chest_Pain'] = st.slider("Chest Pain Severity / Presence", 0, 1, 0, format="%d",
+                                         help="Is patient exhibiting signs of active chest pain? (0 = No, 1 = Yes)")
+    user_input['Shortness_of_Breath'] = st.slider("Shortness of Breath (Dyspnea)", 0, 1, 0,
+                                                help="Observable or reported breathing complications.")
+    user_input['Fatigue'] = st.slider("Chronic Unexplained Fatigue", 0, 1, 0,
+                                      help="Prolonged systemic exhaustion under standard workloads.")
+    user_input['Palpitations'] = st.slider("Palpitations / Arrhythmia Symptoms", 0, 1, 0,
+                                            help="Irregular or heavy pounding pulse sensations.")
+    user_input['Dizziness'] = st.slider("Dizziness / Vertigo Instances", 0, 1, 0,
+                                         help="Spells of loss of balance or persistent lightheadedness.")
+    user_input['Swelling'] = st.slider("Peripheral Swelling (Edema)", 0, 1, 0,
+                                        help="Noticeable fluid accumulation in limbs or joint regions.")
+    user_input['Pain_Arms_Jaw_Back'] = st.slider("Referred Pain (Arms, Jaw, Back)", 0, 1, 0,
+                                                 help="Radiating pain common with cardiovascular strain.")
 
 with col2:
-    st.subheader("🏥 Medical & Lifestyle History")
-    for f in risk_factor_features:
-        user_input[f] = st.selectbox(
-            f.replace("_", " "),
-            options=[("No", 0.0), ("Yes", 1.0)],
-            format_func=lambda x: x[0]
-        )[1]
+    st.markdown("### Chronic Risks & Clinical Baselines")
+    user_input['Gender'] = st.slider("Gender Identity Mapping", 0, 1, 1, 
+                                     help="Physiological Sex Category (0: Female, 1: Male).")
+    user_input['Cold_Sweats_Nausea'] = st.slider("Cold Sweats / Nausea Presence", 0, 1, 0,
+                                                    help="Concurrent standard acute cardiac stress indicators.")
+    user_input['High_BP'] = st.slider("Hypertension History (High BP)", 0, 1, 0,
+                                      help="Patient has documented or treated elevated arterial blood pressure.")
+    user_input['High_Cholesterol'] = st.slider("Hyperlipidemia (High Cholesterol)", 0, 1, 0,
+                                                help="Patient has historical serum lipid abnormalities.")
+    user_input['Diabetes'] = st.slider("Diabetes Mellitus Diagnosis", 0, 1, 0,
+                                        help="Documented glycemic regulation disorder history.")
+    user_input['Smoking'] = st.slider("Tobacco / Nicotine Consumption", 0, 1, 0,
+                                      help="Active regular or highly recent historical tobacco use.")
+    user_input['Obesity'] = st.slider("Clinical Obesity Profile", 0, 1, 0,
+                                      help="BMI indices falling in the range categorized as clinically obese.")
+    user_input['Sedentary_Lifestyle'] = st.slider("Sedentary Activity Baseline", 0, 1, 0,
+                                                   help="Lack of regular required structured metabolic physical exercise.")
+    user_input['Family_History'] = st.slider("Family Genetic Cardiovascular History", 0, 1, 0,
+                                                help="Direct biological lineage historical cardiovascular diagnoses.")
+    user_input['Chronic_Stress'] = st.slider("Persistent Psychosocial / Chronic Stress", 0, 1, 0,
+                                                help="Elevated cortisol/stress profiles over standard long durations.")
 
-# ========================================== #
-# PREDICTION                                 #
-# ========================================== #
+# Construct Vector Array via DataFrame
+input_df = pd.DataFrame([user_input])
+
+# --- Diagnostic Execution Block --- #
 st.markdown("---")
+if st.button("Execute Diagnostic Risk Assessment", help="Compute diagnostic probability arrays across classification boundaries."):
+    with st.spinner("Processing analytical models across parameters..."):
+        try:
+            # Scale & Standardize Input Matrix
+            processed_input_df = preprocess_input(input_df, feature_columns)
+            data_scaled = scaler.transform(processed_input_df)
+            data_scaled_df = pd.DataFrame(data_scaled, columns=feature_columns)
 
-st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-predict_btn = st.button("🔍 Run Diagnostic Analysis")
-st.markdown("</div>", unsafe_allow_html=True)
+            # Compute Class Probability Outputs
+            risk_prediction, risk_proba = predict_risk(data_scaled_df)
 
-if predict_btn:
-    input_df = pd.DataFrame([user_input])
-
-    try:
-        prediction = pipeline.predict(input_df)[0]
-        probability = pipeline.predict_proba(input_df)[0]
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("📊 Diagnostic Assessment Result")
-
-        if prediction == 1:
-            st.markdown(
-                f"<div class='high-risk-alert'>🚨 CRITICAL ALERT: HIGH RISK OF HEART DISEASE DETECTED</div>", 
-                unsafe_allow_html=True
-            )
-            st.metric("Calculated Risk Probability", f"{probability[1] * 100:.1f}%")
-            st.markdown("<p class='warning-text'>⚠️ Warning: Immediate clinical evaluation and diagnostic testing are strongly recommended.</p>", unsafe_allow_html=True)
-        else:
-            st.success("✅ PATIENT STATUS: LOW RISK DETECTED")
-            st.metric("Confidence Probability", f"{probability[0] * 100:.1f}%")
-            st.info("Recommendation: Maintain preventative lifestyle measures and follow standard periodic testing guidelines.")
+            st.markdown("## Analytical Outcome Breakdown")
             
-    except Exception as e:
-        st.error(f"An error occurred during pipeline prediction: {e}")
+            # Displays probability in a prominent metric format
+            st.metric(label="Calculated Pathological Probability", value=f"{risk_proba:.2%}")
 
-    st.markdown("---")
-    st.caption("Disclaimer: This tool is an AI decision aid and should not replace professional medical diagnosis.")
+            if risk_prediction == 1:
+                st.markdown(
+                    f"""
+                    <div class="high-risk-alert">
+                        <h3>⚠️ Elevate Clinical Vigilance: High Cardiovascular Risk Profile</h3>
+                        <strong>Clinical Directive:</strong> Immediate comprehensive cardiovascular diagnostics, laboratory evaluation, and specialized clinical consultation are highly indicated.
+                    </div>
+                    """, 
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f"""
+                    <div class="low-risk-alert">
+                        <h3>✅ Low Evaluated Cardiovascular Risk Baseline</h3>
+                        <strong>Clinical Directive:</strong> Maintain routine standard preventative lifestyle habits and maintain established scheduled follow-up evaluations.
+                    </div>
+                    """, 
+                    unsafe_allow_html=True
+                )
+
+        except Exception as e:
+            st.error(f"Critical error executed within mathematical framework evaluation: {e}")
